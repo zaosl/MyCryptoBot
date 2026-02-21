@@ -28,7 +28,8 @@ TEXTS = {
         'welcome': "👑 **خوش آمدید رئیس!**\nارز یا ابزار مورد نظر خود را انتخاب کنید 📊👇",
         'locked': "⛔️ **دسترسی محدود! (فقط VIP)**\n\nبرای خرید اشتراک و فعال‌سازی ربات، لطفاً آیدی عددی زیر را کپی کرده و همراه با فیش واریزی به پشتیبانی ارسال کنید:\n\n👤 **آیدی عددی شما:** `{user_id}`\n👨‍💻 **ارتباط با پشتیبانی:** @zaosl",
         'whales': "🐋 شکارچی نهنگ‌ها", 'fng': "🧭 ترس و طمع",
-        'wait': "⏳ در حال ارتباط با هسته بایننس..."
+        'wait': "⏳ در حال ارتباط با هسته بایننس...",
+        'toman': "🇮🇷 معادل تومان: `{:,} تومان`"
     },
     'en': {
         'welcome': "👑 **Welcome Boss!**\nSelect your tool or coin 📊👇",
@@ -71,7 +72,17 @@ def save_vip_users(users):
 
 VIP_USERS = load_vip_users()
 
-# --- توابع تحلیلگر (با آدرس‌های بدون تحریم) ---
+# --- تابع دریافت قیمت تتر به تومان برای بخش فارسی ---
+def get_tether_to_toman():
+    try:
+        # دریافت قیمت از نوبیتکس (ریال به تومان تبدیل می‌شود)
+        res = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=7).json()
+        price_toman = int(float(res['stats']['usdt-rls']['latest']) / 10)
+        return price_toman
+    except:
+        return 65000 # قیمت رزرو در صورت قطع بودن API
+
+# --- توابع تحلیلگر ---
 def calculate_rsi(symbol, period=14):
     try:
         url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit={period+1}"
@@ -171,7 +182,16 @@ def handle_crypto_request(message):
             change = float(data['priceChangePercent'])
             rsi = calculate_rsi(coin_symbol)
             change_str = f"+{change}%" if change > 0 else f"{change}%"
+            
+            # پایه پاسخ (قیمت دلار و RSI)
             response_text = f"📊 **{coin_symbol.replace('USDT','')}**\n💰 Price: `${price:,.5f}`\n📈 24h: `{change_str}`\n🧠 **AI (RSI):** {rsi:.1f}/100"
+            
+            # اضافه کردن معادل تومان فقط برای زبان فارسی
+            if lang == 'fa':
+                tether_price = get_tether_to_toman()
+                toman_price = int(price * tether_price)
+                response_text += f"\n\n{t['toman'].format(toman_price)}"
+
             bot.edit_message_text(response_text, chat_id=message.chat.id, message_id=msg_wait.message_id, parse_mode='Markdown')
         except Exception as e: 
             bot.edit_message_text(f"❌ خطای دریافت اطلاعات:\n`{e}`", chat_id=message.chat.id, message_id=msg_wait.message_id, parse_mode='Markdown')
