@@ -6,7 +6,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 import os
 from flask import Flask
 
-TOKEN = '8303500826:AAH1eRkav40VbGcI8U3lBxusVPDIi0tZBVE'
+TOKEN = '8303500826:AAEDHAgN5eTChMz6QT5zDyuV3XSrv3AqhgQ'
 bot = telebot.TeleBot(TOKEN)
 ADMIN_ID = 8411101062 
 
