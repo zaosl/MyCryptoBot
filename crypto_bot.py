@@ -23,31 +23,52 @@ COIN_BUTTONS = [
     '🔷 TON', '⚡️ LTC'
 ]
 
+# --- دیتابیس متن‌ها (آپدیت شده با بخش دونیت) ---
 TEXTS = {
     'fa': {
         'welcome': "👑 **خوش آمدید رئیس!**\nارز یا ابزار مورد نظر خود را انتخاب کنید 📊👇",
         'locked': "⛔️ **دسترسی محدود! (فقط VIP)**\n\nبرای خرید اشتراک و فعال‌سازی ربات، لطفاً آیدی عددی زیر را کپی کرده و همراه با فیش واریزی به پشتیبانی ارسال کنید:\n\n👤 **آیدی عددی شما:** `{user_id}`\n👨‍💻 **ارتباط با پشتیبانی:** @zaosl",
         'whales': "🐋 شکارچی نهنگ‌ها", 'fng': "🧭 ترس و طمع",
         'wait': "⏳ در حال ارتباط با هسته بایننس...",
-        'toman': "🇮🇷 معادل تومان: `{:,} تومان`"
+        'toman': "🇮🇷 معادل تومان: `{:,} تومان`",
+        'donate_msg': "❤️ **حمایت از ما**\n\nاگر این ربات برات مفیده و دوست داری به ما انرژی بدی، می‌تونی ازمون حمایت مالی کنی. (کاملاً اختیاری!)",
+        'btn_donate': "☕️ حمایت مالی (دونیت)",
+        'btn_free': "ادامه استفاده رایگان ➡️",
+        'wallet_msg': "دمت گرم رئیس! 🙏\nTONی حمایت می‌تونی از آدرس تتر (TON) زیر استفاده کنی:\n\n`UQBl6L9iAD7aP1SoHbLPovpqyhf5HQOTPPDBOzwLE2XqW2ca`",
+        'btn_main_menu': "بازگشت به منوی اصلی 🏠"
     },
     'en': {
         'welcome': "👑 **Welcome Boss!**\nSelect your tool or coin 📊👇",
         'locked': "⛔️ **Access Denied! (VIP Only)**\n\nTo activate your subscription, please send your ID and payment receipt to support:\n\n👤 **Your ID:** `{user_id}`\n👨‍💻 **Support:** @zaosl",
         'whales': "🐋 Whale Hunter", 'fng': "🧭 Fear & Greed",
-        'wait': "⏳ Fetching data..."
+        'wait': "⏳ Fetching data...",
+        'donate_msg': "❤️ **Support Us**\n\nIf you find this bot useful, consider supporting us! (Completely optional)",
+        'btn_donate': "☕️ Donate",
+        'btn_free': "Continue for Free ➡️",
+        'wallet_msg': "Thank you for your support! 🙏\nUSDT (TRC20) Address:\n\n`YOUR_USDT_ADDRESS_HERE`",
+        'btn_main_menu': "Main Menu 🏠"
     },
     'ru': {
         'welcome': "👑 **Добро пожаловать!**\nВыберите инструмент 📊👇",
         'locked': "⛔️ **Доступ закрыт! (Только VIP)**\n\nОтправьте ваш ID и чек об оплате в поддержку:\n\n👤 **Ваш ID:** `{user_id}`\n👨‍💻 **Поддержка:** @zaosl",
         'whales': "🐋 Охотник на китов", 'fng': "🧭 Индекс страха",
-        'wait': "⏳ Обработка..."
+        'wait': "⏳ Обработка...",
+        'donate_msg': "❤️ **Поддержите нас**\n\nЕсли этот бот вам полезен, вы можете поддержать нас! (Необязательно)",
+        'btn_donate': "☕️ Пожертвовать",
+        'btn_free': "Продолжить бесплатно ➡️",
+        'wallet_msg': "Спасибо за вашу поддержку! 🙏\nUSDT (TRC20):\n\n`ВАШ_АДРЕС_USDT`",
+        'btn_main_menu': "Главное меню 🏠"
     },
     'ar': {
         'welcome': "👑 **أهلاً بك أيها الزعيم!**\nاختر أداتك 📊👇",
         'locked': "⛔️ **تم الرفض! (VIP فقط)**\n\nأرسل معرفك وإيصال الدفع إلى الدعم الفني:\n\n👤 **معرفك:** `{user_id}`\n👨‍💻 **الدعم:** @zaosl",
         'whales': "🐋 صياد الحيتان", 'fng': "🧭 مؤشر الخوف",
-        'wait': "⏳ جاري المعالجة..."
+        'wait': "⏳ جاري المعالجة...",
+        'donate_msg': "❤️ **ادعمنا**\n\nإذا كان هذا الروبوت مفيدًا لك، يمكنك دعمنا! (اختياري تمامًا)",
+        'btn_donate': "☕️ تبرع",
+        'btn_free': "الاستمرار مجانًا ➡️",
+        'wallet_msg': "شكرا لدعمك! 🙏\nعنوان USDT (TRC20):\n\n`عنوان_USDT_الخاص_بك`",
+        'btn_main_menu': "القائمة الرئيسية 🏠"
     }
 }
 
@@ -75,12 +96,11 @@ VIP_USERS = load_vip_users()
 # --- تابع دریافت قیمت تتر به تومان برای بخش فارسی ---
 def get_tether_to_toman():
     try:
-        # دریافت قیمت از نوبیتکس (ریال به تومان تبدیل می‌شود)
         res = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=7).json()
         price_toman = int(float(res['stats']['usdt-rls']['latest']) / 10)
         return price_toman
     except:
-        return 65000 # قیمت رزرو در صورت قطع بودن API
+        return 65000 
 
 # --- توابع تحلیلگر ---
 def calculate_rsi(symbol, period=14):
@@ -122,22 +142,48 @@ def send_welcome(message):
     )
     bot.reply_to(message, "🌍 Please select your language:\nلطفا زبان خود را انتخاب کنید:", reply_markup=markup)
 
+# مرحله انتخاب زبان و نمایش پیام دونیت
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
-def set_language(call):
+def set_language_and_donate(call):
     lang_code = call.data.split('_')[1]
     user_id = call.from_user.id
     USER_LANGS[user_id] = lang_code
     bot.delete_message(call.message.chat.id, call.message.message_id)
     
     t = TEXTS[lang_code]
-    if user_id not in VIP_USERS and user_id != ADMIN_ID:
-        bot.send_message(call.message.chat.id, t['locked'].format(user_id=user_id), parse_mode='Markdown')
-        return
+    
+    # دکمه‌های شیشه‌ای برای دونیت یا استفاده رایگان
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(t['btn_donate'], callback_data="donate_show"))
+    markup.add(InlineKeyboardButton(t['btn_free'], callback_data="donate_skip"))
+    
+    bot.send_message(call.message.chat.id, t['donate_msg'], reply_markup=markup, parse_mode='Markdown')
 
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    markup.add(*[KeyboardButton(c) for c in COIN_BUTTONS])
-    markup.add(KeyboardButton(t['whales']), KeyboardButton(t['fng']))
-    bot.send_message(call.message.chat.id, t['welcome'], reply_markup=markup, parse_mode='Markdown')
+# هندلر برای دکمه‌های بخش دونیت
+@bot.callback_query_handler(func=lambda call: call.data in ['donate_show', 'donate_skip'])
+def handle_donation_choice(call):
+    user_id = call.from_user.id
+    lang_code = USER_LANGS.get(user_id, 'fa')
+    t = TEXTS[lang_code]
+    
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    
+    if call.data == 'donate_show':
+        # نمایش ولت و دکمه برگشت به منو
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(t['btn_main_menu'], callback_data="donate_skip"))
+        bot.send_message(call.message.chat.id, t['wallet_msg'], reply_markup=markup, parse_mode='Markdown')
+        
+    elif call.data == 'donate_skip':
+        # رفتن به منوی اصلی (کدهای قبلی خودت)
+        if user_id not in VIP_USERS and user_id != ADMIN_ID:
+            bot.send_message(call.message.chat.id, t['locked'].format(user_id=user_id), parse_mode='Markdown')
+            return
+
+        markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
+        markup.add(*[KeyboardButton(c) for c in COIN_BUTTONS])
+        markup.add(KeyboardButton(t['whales']), KeyboardButton(t['fng']))
+        bot.send_message(call.message.chat.id, t['welcome'], reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(commands=['add'])
 def add_vip_user(message):
@@ -183,10 +229,8 @@ def handle_crypto_request(message):
             rsi = calculate_rsi(coin_symbol)
             change_str = f"+{change}%" if change > 0 else f"{change}%"
             
-            # پایه پاسخ (قیمت دلار و RSI)
             response_text = f"📊 **{coin_symbol.replace('USDT','')}**\n💰 Price: `${price:,.5f}`\n📈 24h: `{change_str}`\n🧠 **AI (RSI):** {rsi:.1f}/100"
             
-            # اضافه کردن معادل تومان فقط برای زبان فارسی
             if lang == 'fa':
                 tether_price = get_tether_to_toman()
                 toman_price = int(price * tether_price)
@@ -220,6 +264,6 @@ def handle_crypto_request(message):
 if __name__ == '__main__':
     keep_alive() 
     print("="*50)
-    print(" ☁️ ANTI-FILTER CLOUD BOT IS ONLINE ")
+    print(" ☁️ VIP BOT WITH DONATION STEP IS ONLINE ")
     print("="*50)
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
