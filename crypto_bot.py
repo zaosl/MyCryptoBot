@@ -6,6 +6,13 @@ import re
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import os
 from flask import Flask
+import pandas as pd
+import mplfinance as mpf
+import io
+import matplotlib
+
+# تنظیم بک‌اند برای سرورهای بدون نمایشگر (مثل رندر)
+matplotlib.use('Agg')
 
 TOKEN = '8303500826:AAEDHAgN5eTChMz6QT5zDyuV3XSrv3AqhgQ'
 bot = telebot.TeleBot(TOKEN)
@@ -23,24 +30,21 @@ COIN_BUTTONS = [
 ]
 
 COIN_MAP = {
-    'بیت': ('BTCUSDT', 'bitcoin-btc'), 'بیت کوین': ('BTCUSDT', 'bitcoin-btc'),
-    'اتریوم': ('ETHUSDT', 'ethereum-eth'), 'اتر': ('ETHUSDT', 'ethereum-eth'),
-    'سولانا': ('SOLUSDT', 'solana-sol'), 'سول': ('SOLUSDT', 'solana-sol'),
-    'دوج': ('DOGEUSDT', 'dogecoin-doge'), 'دوج کوین': ('DOGEUSDT', 'dogecoin-doge'),
-    'ترون': ('TRXUSDT', 'tron-trx'),
-    'شیبا': ('SHIBUSDT', 'shiba-inu-shib'),
-    'تون': ('TONUSDT', 'toncoin-ton'), 'تون کوین': ('TONUSDT', 'toncoin-ton'),
-    'ریپل': ('XRPUSDT', 'xrp-xrp'),
-    'کاردانو': ('ADAUSDT', 'cardano-ada'),
-    'لایت کوین': ('LTCUSDT', 'litecoin-ltc'),
-    'بی ان بی': ('BNBUSDT', 'bnb-bnb')
+    'بیت': 'BTCUSDT', 'بیت کوین': 'BTCUSDT',
+    'اتریوم': 'ETHUSDT', 'اتر': 'ETHUSDT',
+    'سولانا': 'SOLUSDT', 'سول': 'SOLUSDT',
+    'دوج': 'DOGEUSDT', 'دوج کوین': 'DOGEUSDT',
+    'ترون': 'TRXUSDT', 'شیبا': 'SHIBUSDT',
+    'تون': 'TONUSDT', 'تون کوین': 'TONUSDT',
+    'ریپل': 'XRPUSDT', 'کاردانو': 'ADAUSDT',
+    'لایت کوین': 'LTCUSDT', 'بی ان بی': 'BNBUSDT'
 }
 
 TEXTS = {
     'fa': {
         'welcome': "👑 **خوش آمدید رئیس!**\nارز یا ابزار مورد نظر خود را انتخاب کنید 📊👇",
         'whales': "🐋 شکارچی نهنگ‌ها", 'fng': "🧭 ترس و طمع",
-        'wait': "⏳ در حال ارتباط با هسته بایننس...",
+        'wait': "⏳ در حال رسم نمودار و دریافت اطلاعات...",
         'toman': "🇮🇷 معادل تومان: `{:,} تومان`",
         'donate_msg': "❤️ **حمایت از ما**\n\nاگر این ربات برات مفیده و دوست داری به ما انرژی بدی، می‌تونی ازمون حمایت مالی کنی. (کاملاً اختیاری!)",
         'btn_donate': "☕️ حمایت مالی (دونیت)",
@@ -51,7 +55,7 @@ TEXTS = {
     'en': {
         'welcome': "👑 **Welcome Boss!**\nSelect your tool or coin 📊👇",
         'whales': "🐋 Whale Hunter", 'fng': "🧭 Fear & Greed",
-        'wait': "⏳ Fetching data...",
+        'wait': "⏳ Drawing chart and fetching data...",
         'donate_msg': "❤️ **Support Us**\n\nIf you find this bot useful, consider supporting us! (Completely optional)",
         'btn_donate': "☕️ Donate",
         'btn_free': "Continue for Free ➡️",
@@ -82,20 +86,15 @@ TEXTS = {
 
 app = Flask(__name__)
 @app.route('/')
-def home():
-    return "🤖 Bot is alive and running 24/7! (Created by @zaosl)"
-def run_web():
-    app.run(host='0.0.0.0', port=8080)
-def keep_alive():
-    threading.Thread(target=run_web).start()
+def home(): return "🤖 Bot is alive! (@zaosl_trade_bot)"
+def run_web(): app.run(host='0.0.0.0', port=8080)
+def keep_alive(): threading.Thread(target=run_web).start()
 
 def get_tether_to_toman():
     try:
         res = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=7).json()
-        price_toman = int(float(res['stats']['usdt-rls']['latest']) / 10)
-        return price_toman
-    except:
-        return 65000 
+        return int(float(res['stats']['usdt-rls']['latest']) / 10)
+    except: return 65000 
 
 def calculate_rsi(symbol, period=14):
     try:
@@ -111,8 +110,7 @@ def calculate_rsi(symbol, period=14):
         avg_loss = sum(losses)/period if losses else 0.0001
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
-    except Exception as e: 
-        return 50 
+    except: return 50 
 
 def get_whale_movements():
     url = "https://data-api.binance.vision/api/v3/ticker/24hr"
@@ -121,17 +119,45 @@ def get_whale_movements():
     usdt_pairs.sort(key=lambda x: float(x.get('priceChangePercent', 0)), reverse=True)
     return usdt_pairs[:5], usdt_pairs[-5:][::-1]
 
+# --- تابع جدید: تولید چارت گرافیکی با واترمارک ---
+def generate_chart_image(symbol):
+    try:
+        # دریافت دیتای کندل‌های 24 ساعت گذشته (تایم فریم 1 ساعته)
+        url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit=24"
+        data = requests.get(url, timeout=10).json()
+        
+        # تبدیل دیتا به فرمت مناسب برای رسم نمودار
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_av', 'trades', 'tb_base_av', 'tb_quote_av', 'ignore'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+        
+        # تنظیم استایل چارت (تم دارک و حرفه‌ای)
+        mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
+        s  = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, gridstyle=':', y_on_right=True)
+        
+        # عنوان چارت با واترمارک ریز
+        title = f"\n{symbol.replace('USDT','')}/USDT - 24h Chart\n@zaosl_trade_bot | Support: @zaosl"
+
+        # بافر برای ذخیره عکس در حافظه (بدون ذخیره روی هارد)
+        buf = io.BytesIO()
+        
+        # رسم نمودار خطی
+        mpf.plot(df, type='line', style=s, title=title,
+                 ylabel='Price ($)', volume=False,
+                 savefig=dict(fname=buf, dpi=120, bbox_inches='tight', pad_inches=0.2))
+        
+        buf.seek(0)
+        return buf
+    except Exception as e:
+        print(f"Chart Error: {e}")
+        return None
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("🇮🇷 فارسی", callback_data="lang_fa"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
-    )
-    markup.add(
-        InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
-        InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")
-    )
+    markup.add(InlineKeyboardButton("🇮🇷 فارسی", callback_data="lang_fa"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
+    markup.add(InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"), InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"))
     bot.reply_to(message, "🌍 Please select your language:\nلطفا زبان خود را انتخاب کنید:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
@@ -140,12 +166,9 @@ def set_language_and_donate(call):
     user_id = call.from_user.id
     USER_LANGS[user_id] = lang_code
     bot.delete_message(call.message.chat.id, call.message.message_id)
-    
     t = TEXTS[lang_code]
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton(t['btn_donate'], callback_data="donate_show"))
-    markup.add(InlineKeyboardButton(t['btn_free'], callback_data="donate_skip"))
-    
+    markup.add(InlineKeyboardButton(t['btn_donate'], callback_data="donate_show"), InlineKeyboardButton(t['btn_free'], callback_data="donate_skip"))
     bot.send_message(call.message.chat.id, t['donate_msg'], reply_markup=markup, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda call: call.data in ['donate_show', 'donate_skip'])
@@ -153,31 +176,61 @@ def handle_donation_choice(call):
     user_id = call.from_user.id
     lang_code = USER_LANGS.get(user_id, 'fa')
     t = TEXTS[lang_code]
-    
     bot.delete_message(call.message.chat.id, call.message.message_id)
-    
     if call.data == 'donate_show':
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(t['btn_main_menu'], callback_data="donate_skip"))
         bot.send_message(call.message.chat.id, t['wallet_msg'], reply_markup=markup, parse_mode='Markdown')
-        
     elif call.data == 'donate_skip':
         markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
         markup.add(*[KeyboardButton(c) for c in COIN_BUTTONS])
         markup.add(KeyboardButton(t['whales']), KeyboardButton(t['fng']))
         bot.send_message(call.message.chat.id, t['welcome'], reply_markup=markup, parse_mode='Markdown')
 
-# --- بخش جدید: طراحی دقیق متن رادار شبیه به عکس ---
+# --- بخش جدید: هش چکر (Hash Checker) ---
+@bot.message_handler(func=lambda message: bool(re.search(r"^(hash|هش)\s+([a-fA-F0-9]+)", message.text, re.IGNORECASE)))
+def hash_checker(message):
+    try:
+        match = re.search(r"^(hash|هش)\s+([a-fA-F0-9]+)", message.text, re.IGNORECASE)
+        tx_hash = match.group(2)
+        msg_wait = bot.reply_to(message, "🔍 در حال استعلام وضعیت تراکنش (شبکه ترون)...")
+        
+        # استفاده از API ترون اسکن
+        url = f"https://apilist.tronscan.org/api/transaction-info?hash={tx_hash}"
+        res = requests.get(url, timeout=10).json()
+        
+        if 'contractRet' in res:
+            status = res['contractRet']
+            status_emoji = "✅" if status == 'SUCCESS' else "❌"
+            
+            txt = f"🔍 **نتیجه استعلام تراکنش (TRC20):**\n\n"
+            txt += f"⛓ **Hash:** `{tx_hash[:15]}...`\n"
+            txt += f"📊 **وضعیت:** {status_emoji} **{status}**\n"
+            if 'block' in res: txt += f"📦 **بلاک:** `{res['block']}`\n"
+            txt += f"\n🔗 [مشاهده در ترون‌اسکن](https://tronscan.org/#/transaction/{tx_hash})"
+            
+            bot.edit_message_text(txt, chat_id=message.chat.id, message_id=msg_wait.message_id, parse_mode='Markdown', disable_web_page_preview=True)
+        else:
+             bot.edit_message_text("❌ تراکنش یافت نشد یا مربوط به شبکه ترون نیست.", chat_id=message.chat.id, message_id=msg_wait.message_id)
+             
+    except Exception as e:
+        bot.edit_message_text(f"⚠️ خطا در استعلام: {e}", chat_id=message.chat.id, message_id=msg_wait.message_id)
+
+# --- بخش آپدیت شده: رادار گروه با چارت اختصاصی ---
 @bot.message_handler(func=lambda message: bool(re.search(r"([\d\.]+)\s*(بیت کوین|بیت|اتریوم|اتر|سولانا|سول|دوج کوین|دوج|ترون|شیبا|تون کوین|تون|ریپل|کاردانو|لایت کوین|بی ان بی)", message.text if message.text else "")))
 def group_crypto_calculator(message):
     try:
         match = re.search(r"([\d\.]+)\s*(بیت کوین|بیت|اتریوم|اتر|سولانا|سول|دوج کوین|دوج|ترون|شیبا|تون کوین|تون|ریپل|کاردانو|لایت کوین|بی ان بی)", message.text)
         if not match: return
-        
         amount = float(match.group(1))
         coin_fa = match.group(2)
-        symbol, logo_path = COIN_MAP[coin_fa]
+        symbol = COIN_MAP[coin_fa]
         
+        # تولید چارت
+        chart_img = generate_chart_image(symbol)
+        if not chart_img: return
+
+        # دریافت قیمت لحظه‌ای
         res = requests.get(f"https://data-api.binance.vision/api/v3/ticker/24hr?symbol={symbol}", timeout=5).json()
         price = float(res['lastPrice'])
         high = float(res['highPrice'])
@@ -185,29 +238,25 @@ def group_crypto_calculator(message):
         change = float(res['priceChangePercent'])
         
         tether_price = get_tether_to_toman()
-        
         total_toman = int(amount * price * tether_price)
         total_usd = amount * price
-        
         high_toman = int(high * tether_price)
         low_toman = int(low * tether_price)
         
         change_emoji = "🟢" if change > 0 else "🔴"
         symbol_clean = symbol.replace('USDT', '')
         
-        # چیدمان متن دقیقاً مثل اسکرین‌شات (با فرمت HTML)
         caption = f"💎 <b>{amount:g} {symbol_clean} :</b>\n\n"
         caption += f"💸 <b>{total_toman:,}</b> toman\n"
         caption += f"💲 <b>${total_usd:,.3f}</b> dollar\n"
         caption += f"{change_emoji} <b>{change}%</b>\n\n"
         caption += f"<blockquote>📊 <b>High & Low</b> 📉.\n"
         caption += f"💸 {high_toman:,} / {low_toman:,} toman</blockquote>"
+        caption += f"\n🤖 <a href='https://t.me/zaosl_trade_bot'>@zaosl_trade_bot</a>"
         
-        photo_url = f"https://cryptologos.cc/logos/{logo_path}-logo.png"
-        
-        bot.send_photo(message.chat.id, photo_url, caption=caption, reply_to_message_id=message.message_id, parse_mode='HTML')
+        bot.send_photo(message.chat.id, chart_img, caption=caption, reply_to_message_id=message.message_id, parse_mode='HTML')
     except Exception as e:
-        pass
+        print(f"Group Error: {e}")
 
 @bot.message_handler(func=lambda message: True)
 def handle_crypto_request(message):
@@ -268,6 +317,6 @@ def handle_crypto_request(message):
 if __name__ == '__main__':
     keep_alive() 
     print("="*50)
-    print(" 🚀 FINAL BOT (HTML FORMATTED) IS ONLINE ")
+    print(" 🚀 PROFESSIONAL CHART & HASH CHECKER BOT IS ONLINE ")
     print("="*50)
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
