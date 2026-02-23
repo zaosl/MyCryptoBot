@@ -2,16 +2,15 @@ import telebot
 import requests
 import threading
 import time
+import re
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import os
 from flask import Flask
 
-# توکن جدید و بمب هسته‌ای شما ☢️
 TOKEN = '8303500826:AAEDHAgN5eTChMz6QT5zDyuV3XSrv3AqhgQ'
 bot = telebot.TeleBot(TOKEN)
 ADMIN_ID = 8411101062 
 
-VIP_FILE = 'vip_users.txt'
 USER_LANGS = {} 
 USER_ALERTS = {}
 
@@ -23,34 +22,44 @@ COIN_BUTTONS = [
     '🔷 TON', '⚡️ LTC'
 ]
 
-# --- دیتابیس متن‌ها (آپدیت شده با بخش دونیت) ---
+COIN_MAP = {
+    'بیت': ('BTCUSDT', 'bitcoin-btc'), 'بیت کوین': ('BTCUSDT', 'bitcoin-btc'),
+    'اتریوم': ('ETHUSDT', 'ethereum-eth'), 'اتر': ('ETHUSDT', 'ethereum-eth'),
+    'سولانا': ('SOLUSDT', 'solana-sol'), 'سول': ('SOLUSDT', 'solana-sol'),
+    'دوج': ('DOGEUSDT', 'dogecoin-doge'), 'دوج کوین': ('DOGEUSDT', 'dogecoin-doge'),
+    'ترون': ('TRXUSDT', 'tron-trx'),
+    'شیبا': ('SHIBUSDT', 'shiba-inu-shib'),
+    'تون': ('TONUSDT', 'toncoin-ton'), 'تون کوین': ('TONUSDT', 'toncoin-ton'),
+    'ریپل': ('XRPUSDT', 'xrp-xrp'),
+    'کاردانو': ('ADAUSDT', 'cardano-ada'),
+    'لایت کوین': ('LTCUSDT', 'litecoin-ltc'),
+    'بی ان بی': ('BNBUSDT', 'bnb-bnb')
+}
+
 TEXTS = {
     'fa': {
         'welcome': "👑 **خوش آمدید رئیس!**\nارز یا ابزار مورد نظر خود را انتخاب کنید 📊👇",
-        'locked': "⛔️ **دسترسی محدود! (فقط VIP)**\n\nبرای خرید اشتراک و فعال‌سازی ربات، لطفاً آیدی عددی زیر را کپی کرده و همراه با فیش واریزی به پشتیبانی ارسال کنید:\n\n👤 **آیدی عددی شما:** `{user_id}`\n👨‍💻 **ارتباط با پشتیبانی:** @zaosl",
         'whales': "🐋 شکارچی نهنگ‌ها", 'fng': "🧭 ترس و طمع",
         'wait': "⏳ در حال ارتباط با هسته بایننس...",
         'toman': "🇮🇷 معادل تومان: `{:,} تومان`",
         'donate_msg': "❤️ **حمایت از ما**\n\nاگر این ربات برات مفیده و دوست داری به ما انرژی بدی، می‌تونی ازمون حمایت مالی کنی. (کاملاً اختیاری!)",
         'btn_donate': "☕️ حمایت مالی (دونیت)",
         'btn_free': "ادامه استفاده رایگان ➡️",
-        'wallet_msg': "دمت گرم رئیس! 🙏\nTONی حمایت می‌تونی از آدرس تتر (TON) زیر استفاده کنی:\n\n`UQBl6L9iAD7aP1SoHbLPovpqyhf5HQOTPPDBOzwLE2XqW2ca`",
+        'wallet_msg': "دمت گرم رئیس! 🙏\nبرای حمایت می‌تونی از آدرس تتر (TRC20) زیر استفاده کنی:\n\n`آدرس_تتر_خودت_را_اینجا_بذار`",
         'btn_main_menu': "بازگشت به منوی اصلی 🏠"
     },
     'en': {
         'welcome': "👑 **Welcome Boss!**\nSelect your tool or coin 📊👇",
-        'locked': "⛔️ **Access Denied! (VIP Only)**\n\nTo activate your subscription, please send your ID and payment receipt to support:\n\n👤 **Your ID:** `{user_id}`\n👨‍💻 **Support:** @zaosl",
         'whales': "🐋 Whale Hunter", 'fng': "🧭 Fear & Greed",
         'wait': "⏳ Fetching data...",
         'donate_msg': "❤️ **Support Us**\n\nIf you find this bot useful, consider supporting us! (Completely optional)",
         'btn_donate': "☕️ Donate",
         'btn_free': "Continue for Free ➡️",
-        'wallet_msg': "Thank you for your support! 🙏\nUSDT (TRC20) Address:\n\n`YOUR_USDT_ADDRESS_HERE`",
+        'wallet_msg': "Thank you for your support! 🙏\nUSDT (TRC20):\n\n`YOUR_USDT_ADDRESS_HERE`",
         'btn_main_menu': "Main Menu 🏠"
     },
     'ru': {
         'welcome': "👑 **Добро пожаловать!**\nВыберите инструмент 📊👇",
-        'locked': "⛔️ **Доступ закрыт! (Только VIP)**\n\nОтправьте ваш ID и чек об оплате в поддержку:\n\n👤 **Ваш ID:** `{user_id}`\n👨‍💻 **Поддержка:** @zaosl",
         'whales': "🐋 Охотник на китов", 'fng': "🧭 Индекс страха",
         'wait': "⏳ Обработка...",
         'donate_msg': "❤️ **Поддержите нас**\n\nЕсли этот бот вам полезен, вы можете поддержать нас! (Необязательно)",
@@ -61,7 +70,6 @@ TEXTS = {
     },
     'ar': {
         'welcome': "👑 **أهلاً بك أيها الزعيم!**\nاختر أداتك 📊👇",
-        'locked': "⛔️ **تم الرفض! (VIP فقط)**\n\nأرسل معرفك وإيصال الدفع إلى الدعم الفني:\n\n👤 **معرفك:** `{user_id}`\n👨‍💻 **الدعم:** @zaosl",
         'whales': "🐋 صياد الحيتان", 'fng': "🧭 مؤشر الخوف",
         'wait': "⏳ جاري المعالجة...",
         'donate_msg': "❤️ **ادعمنا**\n\nإذا كان هذا الروبوت مفيدًا لك، يمكنك دعمنا! (اختياري تمامًا)",
@@ -72,7 +80,6 @@ TEXTS = {
     }
 }
 
-# --- 🌐 وب‌سرور ضد خواب ---
 app = Flask(__name__)
 @app.route('/')
 def home():
@@ -82,18 +89,6 @@ def run_web():
 def keep_alive():
     threading.Thread(target=run_web).start()
 
-# --- توابع دیتابیس ---
-def load_vip_users():
-    if not os.path.exists(VIP_FILE): return []
-    with open(VIP_FILE, 'r') as f: return [int(line.strip()) for line in f if line.strip().isdigit()]
-
-def save_vip_users(users):
-    with open(VIP_FILE, 'w') as f:
-        for u in users: f.write(f"{u}\n")
-
-VIP_USERS = load_vip_users()
-
-# --- تابع دریافت قیمت تتر به تومان برای بخش فارسی ---
 def get_tether_to_toman():
     try:
         res = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=7).json()
@@ -102,7 +97,6 @@ def get_tether_to_toman():
     except:
         return 65000 
 
-# --- توابع تحلیلگر ---
 def calculate_rsi(symbol, period=14):
     try:
         url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit={period+1}"
@@ -118,7 +112,6 @@ def calculate_rsi(symbol, period=14):
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
     except Exception as e: 
-        print(f"RSI Error: {e}")
         return 50 
 
 def get_whale_movements():
@@ -128,7 +121,6 @@ def get_whale_movements():
     usdt_pairs.sort(key=lambda x: float(x.get('priceChangePercent', 0)), reverse=True)
     return usdt_pairs[:5], usdt_pairs[-5:][::-1]
 
-# --- هندلرهای ربات ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup()
@@ -142,7 +134,6 @@ def send_welcome(message):
     )
     bot.reply_to(message, "🌍 Please select your language:\nلطفا زبان خود را انتخاب کنید:", reply_markup=markup)
 
-# مرحله انتخاب زبان و نمایش پیام دونیت
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
 def set_language_and_donate(call):
     lang_code = call.data.split('_')[1]
@@ -151,15 +142,12 @@ def set_language_and_donate(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
     
     t = TEXTS[lang_code]
-    
-    # دکمه‌های شیشه‌ای برای دونیت یا استفاده رایگان
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(t['btn_donate'], callback_data="donate_show"))
     markup.add(InlineKeyboardButton(t['btn_free'], callback_data="donate_skip"))
     
     bot.send_message(call.message.chat.id, t['donate_msg'], reply_markup=markup, parse_mode='Markdown')
 
-# هندلر برای دکمه‌های بخش دونیت
 @bot.callback_query_handler(func=lambda call: call.data in ['donate_show', 'donate_skip'])
 def handle_donation_choice(call):
     user_id = call.from_user.id
@@ -169,47 +157,63 @@ def handle_donation_choice(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
     
     if call.data == 'donate_show':
-        # نمایش ولت و دکمه برگشت به منو
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(t['btn_main_menu'], callback_data="donate_skip"))
         bot.send_message(call.message.chat.id, t['wallet_msg'], reply_markup=markup, parse_mode='Markdown')
         
     elif call.data == 'donate_skip':
-        # رفتن به منوی اصلی (کدهای قبلی خودت)
-        if user_id not in VIP_USERS and user_id != ADMIN_ID:
-            bot.send_message(call.message.chat.id, t['locked'].format(user_id=user_id), parse_mode='Markdown')
-            return
-
         markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
         markup.add(*[KeyboardButton(c) for c in COIN_BUTTONS])
         markup.add(KeyboardButton(t['whales']), KeyboardButton(t['fng']))
         bot.send_message(call.message.chat.id, t['welcome'], reply_markup=markup, parse_mode='Markdown')
 
-@bot.message_handler(commands=['add'])
-def add_vip_user(message):
-    if message.from_user.id != ADMIN_ID: return
+# --- بخش جدید: طراحی دقیق متن رادار شبیه به عکس ---
+@bot.message_handler(func=lambda message: bool(re.search(r"([\d\.]+)\s*(بیت کوین|بیت|اتریوم|اتر|سولانا|سول|دوج کوین|دوج|ترون|شیبا|تون کوین|تون|ریپل|کاردانو|لایت کوین|بی ان بی)", message.text if message.text else "")))
+def group_crypto_calculator(message):
     try:
-        new_user_id = int(message.text.split()[1])
-        if new_user_id not in VIP_USERS:
-            VIP_USERS.append(new_user_id)
-            save_vip_users(VIP_USERS)
-            bot.reply_to(message, f"✅ کاربر `{new_user_id}` با موفقیت ثبت شد.")
-            try:
-                success_msg = "🎉 **تایید حساب کاربری!**\n\nهم‌اکنون به امکانات VIP دسترسی دارید.\n👉 /start"
-                bot.send_message(new_user_id, success_msg, parse_mode='Markdown')
-            except Exception as e:
-                bot.reply_to(message, f"⚠️ کاربر ثبت شد اما ارسال پیام به او با خطا مواجه شد: {e}")
-        else:
-            bot.reply_to(message, "⚠️ این کاربر از قبل در سیستم است.")
-    except Exception as e: 
-        bot.reply_to(message, f"❌ فرمت اشتباه است. مثال: `/add 123456789`\nارور: {e}", parse_mode='Markdown')
+        match = re.search(r"([\d\.]+)\s*(بیت کوین|بیت|اتریوم|اتر|سولانا|سول|دوج کوین|دوج|ترون|شیبا|تون کوین|تون|ریپل|کاردانو|لایت کوین|بی ان بی)", message.text)
+        if not match: return
+        
+        amount = float(match.group(1))
+        coin_fa = match.group(2)
+        symbol, logo_path = COIN_MAP[coin_fa]
+        
+        res = requests.get(f"https://data-api.binance.vision/api/v3/ticker/24hr?symbol={symbol}", timeout=5).json()
+        price = float(res['lastPrice'])
+        high = float(res['highPrice'])
+        low = float(res['lowPrice'])
+        change = float(res['priceChangePercent'])
+        
+        tether_price = get_tether_to_toman()
+        
+        total_toman = int(amount * price * tether_price)
+        total_usd = amount * price
+        
+        high_toman = int(high * tether_price)
+        low_toman = int(low * tether_price)
+        
+        change_emoji = "🟢" if change > 0 else "🔴"
+        symbol_clean = symbol.replace('USDT', '')
+        
+        # چیدمان متن دقیقاً مثل اسکرین‌شات (با فرمت HTML)
+        caption = f"💎 <b>{amount:g} {symbol_clean} :</b>\n\n"
+        caption += f"💸 <b>{total_toman:,}</b> toman\n"
+        caption += f"💲 <b>${total_usd:,.3f}</b> dollar\n"
+        caption += f"{change_emoji} <b>{change}%</b>\n\n"
+        caption += f"<blockquote>📊 <b>High & Low</b> 📉.\n"
+        caption += f"💸 {high_toman:,} / {low_toman:,} toman</blockquote>"
+        
+        photo_url = f"https://cryptologos.cc/logos/{logo_path}-logo.png"
+        
+        bot.send_photo(message.chat.id, photo_url, caption=caption, reply_to_message_id=message.message_id, parse_mode='HTML')
+    except Exception as e:
+        pass
 
 @bot.message_handler(func=lambda message: True)
 def handle_crypto_request(message):
     user_id = message.from_user.id
     lang = USER_LANGS.get(user_id, 'fa')
     t = TEXTS[lang]
-    if user_id not in VIP_USERS and user_id != ADMIN_ID: return
     text = message.text
     
     if text in COIN_BUTTONS:
@@ -264,6 +268,6 @@ def handle_crypto_request(message):
 if __name__ == '__main__':
     keep_alive() 
     print("="*50)
-    print(" ☁️ VIP BOT WITH DONATION STEP IS ONLINE ")
+    print(" 🚀 FINAL BOT (HTML FORMATTED) IS ONLINE ")
     print("="*50)
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
