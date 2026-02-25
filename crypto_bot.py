@@ -18,6 +18,11 @@ TOKEN = '8303500826:AAEDHAgN5eTChMz6QT5zDyuV3XSrv3AqhgQ'
 bot = telebot.TeleBot(TOKEN)
 ADMIN_ID = 8411101062 
 
+# --- متغیرهای جدید اضافه شده برای مارکت‌پلیس ---
+MANUAL_USDT_TOMAN = 0 # 0 یعنی از نوبیتکس بگیره، اگر ادمین تغییر بده این مقدار جایگزین میشه
+USDT_AFN = 75 # نرخ پیش‌فرض افغانی
+# ------------------------------------------------
+
 USER_LANGS = {} 
 USER_ALERTS = {}
 
@@ -90,11 +95,27 @@ def home(): return "🤖 Bot is alive! (@zaosl_trade_bot)"
 def run_web(): app.run(host='0.0.0.0', port=8080)
 def keep_alive(): threading.Thread(target=run_web).start()
 
+# --- توابع کمکی ---
 def get_tether_to_toman():
+    global MANUAL_USDT_TOMAN
+    if MANUAL_USDT_TOMAN > 0:
+        return MANUAL_USDT_TOMAN
     try:
         res = requests.get("https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls", timeout=7).json()
         return int(float(res['stats']['usdt-rls']['latest']) / 10)
     except: return 65000 
+
+def get_crypto_data(symbol):
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}USDT"
+        res = requests.get(url).json()
+        price = round(float(res['lastPrice']), 4)
+        change = round(float(res['priceChangePercent']), 2)
+        high = float(res['highPrice'])
+        low = float(res['lowPrice'])
+        return price, change, high, low
+    except:
+        return None, None, None, None
 
 def calculate_rsi(symbol, period=14):
     try:
@@ -119,30 +140,22 @@ def get_whale_movements():
     usdt_pairs.sort(key=lambda x: float(x.get('priceChangePercent', 0)), reverse=True)
     return usdt_pairs[:5], usdt_pairs[-5:][::-1]
 
-# --- تابع جدید: تولید چارت گرافیکی با واترمارک ---
 def generate_chart_image(symbol):
     try:
-        # دریافت دیتای کندل‌های 24 ساعت گذشته (تایم فریم 1 ساعته)
         url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit=24"
         data = requests.get(url, timeout=10).json()
         
-        # تبدیل دیتا به فرمت مناسب برای رسم نمودار
         df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_av', 'trades', 'tb_base_av', 'tb_quote_av', 'ignore'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
         df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         
-        # تنظیم استایل چارت (تم دارک و حرفه‌ای)
         mc = mpf.make_marketcolors(up='#00ff00', down='#ff0000', inherit=True)
         s  = mpf.make_mpf_style(base_mpf_style='nightclouds', marketcolors=mc, gridstyle=':', y_on_right=True)
         
-        # عنوان چارت با واترمارک ریز
         title = f"\n{symbol.replace('USDT','')}/USDT - 24h Chart\n@zaosl_trade_bot | Support: @zaosl"
 
-        # بافر برای ذخیره عکس در حافظه (بدون ذخیره روی هارد)
         buf = io.BytesIO()
-        
-        # رسم نمودار خطی
         mpf.plot(df, type='line', style=s, title=title,
                  ylabel='Price ($)', volume=False,
                  savefig=dict(fname=buf, dpi=120, bbox_inches='tight', pad_inches=0.2))
@@ -153,6 +166,7 @@ def generate_chart_image(symbol):
         print(f"Chart Error: {e}")
         return None
 
+# ================= دستورات اصلی =================
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup()
@@ -187,15 +201,108 @@ def handle_donation_choice(call):
         markup.add(KeyboardButton(t['whales']), KeyboardButton(t['fng']))
         bot.send_message(call.message.chat.id, t['welcome'], reply_markup=markup, parse_mode='Markdown')
 
-# --- بخش جدید: هش چکر (Hash Checker) ---
-@bot.message_handler(func=lambda message: bool(re.search(r"^(hash|هش)\s+([a-fA-F0-9]+)", message.text, re.IGNORECASE)))
+# ================= تنظیمات ادمین =================
+@bot.message_handler(commands=['setusdt'])
+def set_tether_price(message):
+    global MANUAL_USDT_TOMAN
+    if message.from_user.id != ADMIN_ID: return
+    try:
+        new_price = int(message.text.split()[1])
+        MANUAL_USDT_TOMAN = new_price
+        bot.reply_to(message, f"✅ نرخ تتر (تومان) به صورت دستی تنظیم شد: {MANUAL_USDT_TOMAN:,} T\n(برای بازگشت به قیمت اتوماتیک نوبیتکس عدد 0 را وارد کنید)")
+    except:
+        bot.reply_to(message, "⚠️ فرمت اشتباهه. مثال: /setusdt 61000")
+
+@bot.message_handler(commands=['setafn'])
+def set_afn_price(message):
+    global USDT_AFN
+    if message.from_user.id != ADMIN_ID: return
+    try:
+        new_price = float(message.text.split()[1])
+        USDT_AFN = new_price
+        bot.reply_to(message, f"✅ نرخ تتر (افغانی) آپدیت شد: {USDT_AFN} AFN")
+    except:
+        bot.reply_to(message, "⚠️ فرمت اشتباهه. مثال: /setafn 75.5")
+
+# ================= دستورات سریع مارکت =================
+@bot.message_handler(commands=['btc', 'ton', 'eth', 'sol', 'trx', 'doge', 'xrp'])
+def send_command_price(message):
+    command = message.text.replace('/', '').upper().split('@')[0]
+    usd_price, change, _, _ = get_crypto_data(command)
+    
+    if usd_price:
+        tether_price = get_tether_to_toman()
+        total_toman = int(usd_price * tether_price)
+        trend = "🟢" if change > 0 else "🔴"
+        
+        text = f"💎 **{command}/USDT**\n\n"
+        text += f"💵 Price: `${usd_price}`\n"
+        text += f"🇮🇷 Toman: `{total_toman:,} تومان`\n" 
+        text += f"📊 24h Change: {trend} {change}%\n\n"
+        text += f"🏴‍☠️ *Secure Trading Only*"
+        bot.reply_to(message, text, parse_mode='Markdown')
+
+@bot.message_handler(commands=['analyze'])
+def analyze_market(message):
+    try:
+        symbol = message.text.split()[1].upper()
+        current, _, high, low = get_crypto_data(symbol)
+        
+        if current:
+            trend = "صعودی 📈" if current > (high + low) / 2 else "نزولی 📉"
+            text = f"📊 **تحلیل کوتاه مدت {symbol}/USDT**\n\n"
+            text += f"وضعیت فعلی روند: **{trend}**\n\n"
+            text += f"🔴 مقاومت (سقف 24h): `${high}`\n"
+            text += f"🟢 حمایت (کف 24h): `${low}`\n"
+            bot.reply_to(message, text, parse_mode='Markdown')
+    except:
+        bot.reply_to(message, "⚠️ دستور رو اینطوری بزن: /analyze btc")
+
+# ================= هندلرهای هوشمند (Smart Checkers) =================
+
+# 1. مبدل هوشمند متن (مثل 12 ton یا 12 ton افغانی) - همیشه تومن رو داره!
+@bot.message_handler(regexp=r'(?i)^(\d+(?:\.\d+)?)\s*([a-zA-Z]{2,6})(?:\s+(تومن|افغانی|تتر))?$')
+def smart_text_calculator(message):
+    match = re.search(r'(?i)^(\d+(?:\.\d+)?)\s*([a-zA-Z]{2,6})(?:\s+(تومن|افغانی|تتر))?$', message.text.strip())
+    if not match: return
+    
+    amount = float(match.group(1))
+    symbol_raw = match.group(2).upper()
+    target_currency = match.group(3) 
+    
+    usd_price, _, _, _ = get_crypto_data(symbol_raw)
+    if not usd_price: return 
+
+    total_usd = round(amount * usd_price, 2)
+    tether_price = get_tether_to_toman()
+    total_toman = int(total_usd * tether_price)
+    total_afn = int(total_usd * USDT_AFN)
+    
+    text = f"🧮 **تبدیل سریع {amount:g} {symbol_raw}**\n\n"
+    
+    if target_currency == 'تومن':
+        text += f"🇮🇷 معادل: `{total_toman:,} تومان`\n"
+    elif target_currency == 'افغانی':
+        text += f"🇦🇫 معادل: `{total_afn:,} افغانی`\n"
+        text += f"🇮🇷 تومان: `{total_toman:,} تومان`\n"
+    elif target_currency == 'تتر':
+        text += f"💵 معادل: `${total_usd:,.2f} تتر`\n"
+        text += f"🇮🇷 تومان: `{total_toman:,} تومان`\n"
+    else:
+        text += f"💵 تتر: `${total_usd:,.2f}`\n"
+        text += f"🇮🇷 تومان: `{total_toman:,} تومان`\n"
+        text += f"🇦🇫 افغانی: `{total_afn:,} افغانی`\n"
+        
+    bot.reply_to(message, text, parse_mode='Markdown')
+
+# 2. هش چکر ترون اسکن
+@bot.message_handler(func=lambda message: bool(re.search(r"^(hash|هش)\s+([a-fA-F0-9]+)", message.text if message.text else "", re.IGNORECASE)))
 def hash_checker(message):
     try:
         match = re.search(r"^(hash|هش)\s+([a-fA-F0-9]+)", message.text, re.IGNORECASE)
         tx_hash = match.group(2)
         msg_wait = bot.reply_to(message, "🔍 در حال استعلام وضعیت تراکنش (شبکه ترون)...")
         
-        # استفاده از API ترون اسکن
         url = f"https://apilist.tronscan.org/api/transaction-info?hash={tx_hash}"
         res = requests.get(url, timeout=10).json()
         
@@ -216,7 +323,7 @@ def hash_checker(message):
     except Exception as e:
         bot.edit_message_text(f"⚠️ خطا در استعلام: {e}", chat_id=message.chat.id, message_id=msg_wait.message_id)
 
-# --- بخش آپدیت شده: رادار گروه با چارت اختصاصی ---
+# 3. مبدل گروه با چارت گرافیکی (برای فرمت‌های فارسی مثل 12 بیت کوین)
 @bot.message_handler(func=lambda message: bool(re.search(r"([\d\.]+)\s*(بیت کوین|بیت|اتریوم|اتر|سولانا|سول|دوج کوین|دوج|ترون|شیبا|تون کوین|تون|ریپل|کاردانو|لایت کوین|بی ان بی)", message.text if message.text else "")))
 def group_crypto_calculator(message):
     try:
@@ -226,11 +333,9 @@ def group_crypto_calculator(message):
         coin_fa = match.group(2)
         symbol = COIN_MAP[coin_fa]
         
-        # تولید چارت
         chart_img = generate_chart_image(symbol)
         if not chart_img: return
 
-        # دریافت قیمت لحظه‌ای
         res = requests.get(f"https://data-api.binance.vision/api/v3/ticker/24hr?symbol={symbol}", timeout=5).json()
         price = float(res['lastPrice'])
         high = float(res['highPrice'])
@@ -258,11 +363,12 @@ def group_crypto_calculator(message):
     except Exception as e:
         print(f"Group Error: {e}")
 
+# ================= هندلر عمومی کیبورد =================
 @bot.message_handler(func=lambda message: True)
 def handle_crypto_request(message):
     user_id = message.from_user.id
     lang = USER_LANGS.get(user_id, 'fa')
-    t = TEXTS[lang]
+    t = TEXTS.get(lang, TEXTS['fa'])
     text = message.text
     
     if text in COIN_BUTTONS:
@@ -317,6 +423,6 @@ def handle_crypto_request(message):
 if __name__ == '__main__':
     keep_alive() 
     print("="*50)
-    print(" 🚀 PROFESSIONAL CHART & HASH CHECKER BOT IS ONLINE ")
+    print(" 🚀 PROFESSIONAL CHART & ESCROW MARKET BOT IS ONLINE ")
     print("="*50)
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
